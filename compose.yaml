@@ -1,0 +1,11 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      AEGIS_ENV: development
+      AEGIS_SECRET_KEY: "dev-secret-change-me-in-production-32chars"
+      REQUIRE_DOMAIN_VERIFICATION: "false"
+    volumes:
+      - ./src:/app/src
