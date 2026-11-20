@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from aegis.core.config import get_settings
 from aegis.core.logging import get_logger
+from aegis.ai.providers import AnthropicProvider, OpenAIProvider
 from aegis.core.models import Finding, ScanResult, Severity
 
 logger = get_logger(__name__)
@@ -73,12 +74,28 @@ class AISecurityAnalyst:
         self.settings = get_settings()
         self.local = LocalFallbackAnalyst()
         self._external: AIProvider | None = None
+        provider = self.settings.ai_provider.lower()
+        if provider == "openai" and self.settings.openai_api_key:
+            self._external = OpenAIProvider(
+                self.settings.openai_api_key, self.settings.openai_model
+            )
+        elif provider == "anthropic" and self.settings.anthropic_api_key:
+            self._external = AnthropicProvider(self.settings.anthropic_api_key)
 
     async def executive_summary(self, result: ScanResult) -> str:
-        if not self.settings.ai_provider:
+        if self._external is None:
             return self.local.generate_executive_summary(result)
-        logger.info("External AI provider configured but local summary used for safety in this version")
-        return self.local.generate_executive_summary(result)
+        prompt = (
+            "Write a short executive summary of this security assessment. "
+            "Use only the data provided and do not invent facts.\n"
+            f"Domain: {result.target_domain}\nScore: {result.risk_score}/100\n"
+            "Findings: " + "; ".join(f.title for f in result.findings[:20])
+        )
+        try:
+            return await self._external.analyze(prompt, {"result": result})
+        except Exception as exc:
+            logger.warning("External analyst failed, using local fallback: %s", exc)
+            return self.local.generate_executive_summary(result)
 
     async def explain(self, finding: Finding) -> str:
         return self.local.explain_finding(finding)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -40,6 +41,17 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 console = Console()
+
+
+class ProfileChoice(str, Enum):
+    safe = "safe"
+    standard = "standard"
+
+
+class FormatChoice(str, Enum):
+    markdown = "markdown"
+    json = "json"
+    html = "html"
 
 
 def _run(coro):
@@ -146,7 +158,9 @@ def domain_check(
 @app.command()
 def scan(
     domain: str = typer.Argument(..., help="Authorized domain to assess"),
-    profile: str = typer.Option("safe", help="Scan profile: safe | standard"),
+    profile: ProfileChoice = typer.Option(
+        ProfileChoice.safe, help="Scan profile: safe | standard"
+    ),
     authorize: bool = typer.Option(
         False,
         "--authorize",
@@ -199,11 +213,7 @@ def scan(
         )
         raise typer.Exit(3)
 
-    try:
-        prof = ScanProfile(profile.lower())
-    except ValueError:
-        console.print(f"[red]Unknown profile:[/red] {profile}")
-        raise typer.Exit(2)
+    prof = ScanProfile(profile.value)
 
     engine = ScanEngine()
 
@@ -257,8 +267,15 @@ def scan(
 @app.command("report")
 def report_generate(
     scan_file: Path = typer.Argument(..., help="Path to scan result JSON"),
-    format: str = typer.Option("markdown", "--format", "-f", help="markdown | json | html"),
+    format: FormatChoice = typer.Option(
+        FormatChoice.markdown, "--format", "-f", help="markdown | json | html"
+    ),
     output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    include_ai: bool = typer.Option(
+        True,
+        "--ai/--no-ai",
+        help="Include the generated summary and action plan (markdown/html only)",
+    ),
 ) -> None:
     """
     Generate a professional report from a saved scan-result JSON file.
@@ -285,7 +302,7 @@ def report_generate(
     gen = ReportGenerator()
 
     async def _go():
-        return await gen.generate(result, fmt=format)
+        return await gen.generate(result, fmt=format.value, include_ai=include_ai)
 
     content = _run(_go())
     if output:
