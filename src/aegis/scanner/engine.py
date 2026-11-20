@@ -25,7 +25,7 @@ from aegis.core.models import (
     ScanResult,
     ScanStatus,
 )
-from aegis.core.security import normalize_domain, resolve_and_validate
+from aegis.core.security import SSRFProtectedTransport, normalize_domain, resolve_and_validate
 from aegis.domains.intelligence import DomainIntelligence
 from aegis.risk.engine import RiskEngine
 
@@ -109,28 +109,28 @@ class ScanEngine:
             timeout = httpx.Timeout(self.settings.request_timeout_seconds)
             limits = httpx.Limits(max_connections=5, max_keepalive_connections=2)
 
+            context: dict[str, Any] = {
+                "request_count": 0,
+                "budget": self.settings.max_requests_per_scan,
+            }
+
             async with httpx.AsyncClient(
                 timeout=timeout,
                 limits=limits,
-                follow_redirects=False,
+                transport=SSRFProtectedTransport(verify=True),
                 headers={"User-Agent": "AEGIS-Security-Scanner/0.1 (+https://github.com/Amirhosseinbakhshi2011/AEGIS)"},
-                verify=True,
             ) as client:
-                request_count = 0
-                max_req = self.settings.max_requests_per_scan
-
                 for check in self.checks:
                     self._check_cancelled(scan_id)
-                    if request_count >= max_req:
+                    if context["request_count"] >= context["budget"]:
                         logger.warning("Scan %s hit request budget", scan_id)
                         break
                     try:
                         findings = await asyncio.wait_for(
-                            check.run(client, base_url, domain),
+                            check.run(client, base_url, domain, context),
                             timeout=self.settings.request_timeout_seconds + 5,
                         )
                         result.findings.extend(findings)
-                        request_count += 1
                     except asyncio.TimeoutError:
                         logger.warning("Check %s timed out", check.check_id)
                     except Exception as exc:

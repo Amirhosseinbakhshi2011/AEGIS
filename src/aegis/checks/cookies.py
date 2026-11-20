@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from aegis.checks._http import safe_get
 from aegis.checks.base import BaseCheck
 from aegis.core.models import Confidence, Finding, FindingCategory, Severity
 
@@ -24,7 +25,7 @@ class CookieCheck(BaseCheck):
     ) -> list[Finding]:
         findings: list[Finding] = []
         try:
-            resp = await client.get(url, follow_redirects=True)
+            resp = await safe_get(client, url, domain, context=context)
         except Exception:
             return findings
 

@@ -6,7 +6,9 @@ from typing import Any
 
 import httpx
 
+from aegis.checks._http import safe_get
 from aegis.checks.base import BaseCheck
+from aegis.core.exceptions import SecurityViolationError
 from aegis.core.models import Confidence, Finding, FindingCategory, Severity
 
 
@@ -54,7 +56,20 @@ class SecurityHeadersCheck(BaseCheck):
     ) -> list[Finding]:
         findings: list[Finding] = []
         try:
-            resp = await client.get(url, follow_redirects=False)
+            resp = await safe_get(client, url, domain, context=context)
+        except SecurityViolationError as exc:
+            return [
+                Finding(
+                    title="Redirect escaped authorized scope",
+                    description=str(exc),
+                    severity=Severity.HIGH,
+                    confidence=Confidence.HIGH,
+                    category=FindingCategory.MISCONFIGURATION,
+                    evidence={"error": str(exc)},
+                    check_id="headers.redirect_scope_violation",
+                    affected_url=url,
+                )
+            ]
         except Exception as exc:
             return [
                 Finding(
