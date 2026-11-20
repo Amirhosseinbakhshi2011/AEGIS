@@ -19,6 +19,7 @@ from aegis.core.exceptions import AegisError
 from aegis.core.logging import setup_logging
 from aegis.core.models import ScanProfile
 from aegis.core.security import normalize_domain
+from aegis.core.verification import DomainVerifier
 from aegis.reports.generator import ReportGenerator
 from aegis.scanner.engine import ScanEngine
 
@@ -53,6 +54,45 @@ def version() -> None:
     **Example:** `aegis version`
     """
     console.print(f"AEGIS v{__version__}")
+
+
+@app.command("verify")
+def domain_verify(
+    domain: str = typer.Argument(..., help="Domain whose ownership you want to prove"),
+    check: bool = typer.Option(
+        False, "--check", help="Query DNS and report whether the TXT proof is live"
+    ),
+) -> None:
+    """
+    Issue or check a DNS TXT domain ownership proof.
+
+    **Usage:** `aegis verify <domain>` prints the TXT value to publish.
+    `aegis verify <domain> --check` verifies it is live.
+
+    **Example:** `aegis verify example.com --check`
+    """
+    setup_logging()
+    verifier = DomainVerifier()
+
+    async def _go() -> None:
+        try:
+            normalized = normalize_domain(domain)
+        except ValueError as exc:
+            console.print(f"[red]Invalid domain:[/red] {exc}")
+            raise typer.Exit(2) from exc
+        if check:
+            if await verifier.verify(normalized):
+                console.print(f"[green]Verified[/green] ownership of {normalized}")
+            else:
+                console.print(f"[red]Not verified[/red] for {normalized}. Publish this TXT value:")
+                console.print(verifier.record_value(normalized))
+                raise typer.Exit(1)
+        else:
+            console.print(f"Publish this TXT value on [cyan]{normalized}[/cyan]:")
+            console.print(Panel(verifier.record_value(normalized), title="AEGIS verification TXT"))
+            console.print(f"Then run: aegis verify {normalized} --check")
+
+    _run(_go())
 
 
 @app.command("domain")

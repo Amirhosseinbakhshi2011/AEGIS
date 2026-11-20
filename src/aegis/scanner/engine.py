@@ -26,6 +26,7 @@ from aegis.core.models import (
     ScanStatus,
 )
 from aegis.core.security import SSRFProtectedTransport, normalize_domain, resolve_and_validate
+from aegis.core.verification import DomainVerifier
 from aegis.domains.intelligence import DomainIntelligence
 from aegis.risk.engine import RiskEngine
 
@@ -35,10 +36,11 @@ logger = get_logger(__name__)
 class ScanEngine:
     """Coordinates domain intelligence + web security checks under strict safety limits."""
 
-    def __init__(self) -> None:
+    def __init__(self, verifier: DomainVerifier | None = None) -> None:
         self.settings = get_settings()
         self.domain_intel = DomainIntelligence(timeout=self.settings.request_timeout_seconds)
         self.risk_engine = RiskEngine()
+        self.verifier = verifier or DomainVerifier()
         self._cancelled: set[str] = set()
         self._active_scans: dict[str, ScanResult] = {}
 
@@ -74,6 +76,9 @@ class ScanEngine:
         """
         if self.settings.require_domain_verification and not verified:
             raise DomainNotVerifiedError(domain)
+
+        if verified and self.settings.require_domain_verification:
+            await self.verifier.verify_or_raise(domain)
 
         if not authorized:
             raise SecurityViolationError(
