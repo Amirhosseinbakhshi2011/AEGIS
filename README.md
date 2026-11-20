@@ -101,7 +101,7 @@ ruff check src tests
 
 AEGIS v0.1 focuses on solid authorization/SSRF foundations, domain intelligence, core web checks, transparent risk scoring, reports, CLI and REST API.
 
-Not yet complete: full multi-user auth, Celery workers, broad CVE correlation, PDF export, production dashboard UI.
+Not yet complete: full multi-user auth (shared API key only), broad CVE correlation, PDF export, production dashboard UI.
 
 ## License
 
