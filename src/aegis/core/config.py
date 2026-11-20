@@ -27,6 +27,8 @@ class Settings(BaseSettings):
         min_length=32,
     )
     aegis_api_prefix: str = "/api/v1"
+    # Optional shared API key. When set, all /scans endpoints require X-API-Key.
+    api_key: str = ""
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./aegis.db"

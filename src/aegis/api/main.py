@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from aegis import __version__
+from aegis.auth.api_key import enforce_rate_limit, require_api_key
 from aegis.core.config import get_settings
 from aegis.core.exceptions import AegisError, DomainNotVerifiedError, SecurityViolationError
 from aegis.core.logging import setup_logging
@@ -95,6 +96,7 @@ async def api_health() -> HealthResponse:
     status_code=status.HTTP_202_ACCEPTED,
     tags=["scans"],
     summary="Queue a security assessment",
+    dependencies=[Depends(require_api_key), Depends(enforce_rate_limit)],
 )
 async def create_scan(body: ScanRequest) -> ScanResponse:
     """
@@ -155,6 +157,7 @@ async def _run_in_process(
     f"{settings.aegis_api_prefix}/scans/{{scan_id}}",
     response_model=ScanResult,
     tags=["scans"],
+    dependencies=[Depends(require_api_key), Depends(enforce_rate_limit)],
 )
 async def get_scan(scan_id: str) -> ScanResult:
     result = engine.get_status(scan_id)
@@ -167,7 +170,11 @@ async def get_scan(scan_id: str) -> ScanResult:
     return stored
 
 
-@app.get(f"{settings.aegis_api_prefix}/scans", tags=["scans"])
+@app.get(
+    f"{settings.aegis_api_prefix}/scans",
+    tags=["scans"],
+    dependencies=[Depends(require_api_key), Depends(enforce_rate_limit)],
+)
 async def list_scans(limit: int = 50) -> list[ScanResult]:
     """List recently stored scan results."""
     async with get_session() as session:
@@ -178,6 +185,7 @@ async def list_scans(limit: int = 50) -> list[ScanResult]:
 @app.post(
     f"{settings.aegis_api_prefix}/scans/{{scan_id}}/cancel",
     tags=["scans"],
+    dependencies=[Depends(require_api_key), Depends(enforce_rate_limit)],
 )
 async def cancel_scan(scan_id: str) -> dict[str, Any]:
     try:
