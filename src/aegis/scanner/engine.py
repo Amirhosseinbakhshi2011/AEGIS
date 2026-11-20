@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -21,7 +21,6 @@ from aegis.core.exceptions import (
 from aegis.core.limits import RateLimiter
 from aegis.core.logging import get_logger
 from aegis.core.models import (
-    Finding,
     ScanProfile,
     ScanResult,
     ScanStatus,
@@ -96,7 +95,7 @@ class ScanEngine:
                     status=ScanStatus.FAILED,
                     error_message=f"Scan timed out after {self.settings.scan_timeout_seconds}s",
                 )
-                result.finished_at = datetime.now(timezone.utc)
+                result.finished_at = datetime.now(UTC)
                 self._active_scans[scan_id] = result
 
             await self._persist(result)
@@ -139,7 +138,7 @@ class ScanEngine:
             target_domain=domain,
             status=ScanStatus.RUNNING,
             profile=profile,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             metadata=metadata or {},
         )
         self._active_scans[scan_id] = result
@@ -183,14 +182,14 @@ class ScanEngine:
                             timeout=self.settings.request_timeout_seconds + 5,
                         )
                         result.findings.extend(findings)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.warning("Check %s timed out", check.check_id)
-                    except Exception as exc:
-                        logger.exception("Check %s failed: %s", check.check_id, exc)
+                    except Exception:
+                        logger.exception("Check %s failed", check.check_id)
 
             result.risk_score, result.risk_summary = self.risk_engine.score(result.findings)
             result.status = ScanStatus.COMPLETED
-            result.finished_at = datetime.now(timezone.utc)
+            result.finished_at = datetime.now(UTC)
             logger.info(
                 "Scan %s completed: %d findings, score=%.1f",
                 scan_id,
@@ -200,16 +199,16 @@ class ScanEngine:
 
         except ScanCancelledError:
             result.status = ScanStatus.CANCELLED
-            result.finished_at = datetime.now(timezone.utc)
+            result.finished_at = datetime.now(UTC)
             result.error_message = "Scan cancelled by user"
         except SecurityViolationError as exc:
             result.status = ScanStatus.FAILED
-            result.finished_at = datetime.now(timezone.utc)
+            result.finished_at = datetime.now(UTC)
             result.error_message = str(exc)
             logger.warning("Scan %s blocked by security policy: %s", scan_id, exc)
         except Exception as exc:
             result.status = ScanStatus.FAILED
-            result.finished_at = datetime.now(timezone.utc)
+            result.finished_at = datetime.now(UTC)
             result.error_message = str(exc)
             logger.exception("Scan %s failed", scan_id)
         finally:

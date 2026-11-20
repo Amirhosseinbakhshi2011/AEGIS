@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -17,7 +17,7 @@ class SecurityHeadersCheck(BaseCheck):
     name = "Security Headers"
     description = "Inspect common HTTP security response headers."
 
-    EXPECTED = {
+    EXPECTED: ClassVar[dict[str, dict[str, object]]] = {
         "strict-transport-security": {
             "severity": Severity.MEDIUM,
             "remediation": (

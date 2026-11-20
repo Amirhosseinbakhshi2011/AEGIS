@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import dns.asyncresolver
@@ -11,7 +10,7 @@ import dns.rdatatype
 
 from aegis.core.config import get_settings
 from aegis.core.logging import get_logger
-from aegis.core.models import DomainInfo, Finding, FindingCategory, Confidence, Severity
+from aegis.core.models import Confidence, DomainInfo, Finding, FindingCategory, Severity
 from aegis.core.security import normalize_domain
 
 logger = get_logger(__name__)
@@ -238,8 +237,8 @@ class DomainIntelligence:
                     "expire": r.expire,
                     "minimum": r.minimum,
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("SOA query failed for %s: %s", domain, exc)
         return None
 
     async def _check_dnssec(self, domain: str) -> bool | None:

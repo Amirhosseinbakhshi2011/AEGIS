@@ -15,14 +15,14 @@ from pydantic import BaseModel, Field
 from aegis import __version__
 from aegis.auth.api_key import enforce_rate_limit, require_api_key
 from aegis.core.config import get_settings
-from aegis.core.exceptions import AegisError, DomainNotVerifiedError, SecurityViolationError
+from aegis.core.exceptions import DomainNotVerifiedError, SecurityViolationError
 from aegis.core.logging import setup_logging
 from aegis.core.models import ScanProfile, ScanResult, ScanStatus
 from aegis.core.security import normalize_domain
+from aegis.core.verification import DomainVerifier
 from aegis.database.repository import get_result, list_results
 from aegis.database.session import get_session, init_db
 from aegis.scanner.engine import ScanEngine
-from aegis.core.verification import DomainVerifier
 from aegis.workers.tasks import celery_app, run_scan_task
 
 setup_logging()
@@ -149,8 +149,8 @@ async def _run_in_process(
             verified=verified,
             scan_id=scan_id,
         )
-    except Exception as exc:
-        logger.exception("In-process scan %s failed: %s", scan_id, exc)
+    except Exception:
+        logger.exception("In-process scan %s failed", scan_id)
 
 
 @app.get(

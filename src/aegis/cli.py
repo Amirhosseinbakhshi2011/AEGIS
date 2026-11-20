@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -171,7 +169,7 @@ def scan(
         "--verified",
         help="Confirm domain ownership has been verified (DNS TXT or equivalent)",
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write full JSON result"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write full JSON result"),
 ) -> None:
     """
     Run a safe, non-destructive security assessment of an authorized domain.
@@ -270,7 +268,7 @@ def report_generate(
     format: FormatChoice = typer.Option(
         FormatChoice.markdown, "--format", "-f", help="markdown | json | html"
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    output: Path | None = typer.Option(None, "--output", "-o"),
     include_ai: bool = typer.Option(
         True,
         "--ai/--no-ai",
@@ -325,9 +323,8 @@ def config_show() -> None:
     settings = get_settings()
     data = settings.model_dump()
     for key in list(data.keys()):
-        if any(s in key.lower() for s in ("secret", "key", "password", "token")):
-            if data[key]:
-                data[key] = "***REDACTED***"
+        if any(s in key.lower() for s in ("secret", "key", "password", "token")) and data[key]:
+            data[key] = "***REDACTED***"
     console.print_json(data=data)
 
 

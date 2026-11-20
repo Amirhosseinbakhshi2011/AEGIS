@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ssl
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -11,8 +11,11 @@ import httpx
 from aegis.checks._http import _record, safe_get
 from aegis.checks.base import BaseCheck
 from aegis.core.exceptions import ScanLimitExceededError, SecurityViolationError
+from aegis.core.logging import get_logger
 from aegis.core.models import Confidence, Finding, FindingCategory, Severity
-from aegis.core.security import resolve_and_validate
+from aegis.core.security import resolve_and_validate, validate_redirect_target
+
+logger = get_logger(__name__)
 
 
 class TLSCheck(BaseCheck):
@@ -96,8 +99,8 @@ class TLSCheck(BaseCheck):
             cert_info = await self._get_cert_info(domain)
             if cert_info:
                 findings.extend(self._analyze_cert(cert_info, https_url))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Certificate inspection failed for %s: %s", domain, exc)
 
         http_url = f"http://{domain}/"
         try:
@@ -130,8 +133,8 @@ class TLSCheck(BaseCheck):
                         affected_url=http_url,
                     )
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("HTTP redirect inspection failed for %s: %s", domain, exc)
 
         return findings
 
@@ -164,9 +167,9 @@ class TLSCheck(BaseCheck):
         if not_after:
             try:
                 exp = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(
-                    tzinfo=timezone.utc
+                    tzinfo=UTC
                 )
-                days_left = (exp - datetime.now(timezone.utc)).days
+                days_left = (exp - datetime.now(UTC)).days
                 if days_left < 0:
                     findings.append(
                         Finding(

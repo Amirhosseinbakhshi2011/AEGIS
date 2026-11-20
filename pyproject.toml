@@ -68,6 +68,12 @@ packages = ["src/aegis"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+# B008: Typer requires Option()/Argument() calls in signature defaults.
+# BLE001: network/DNS checks intentionally catch broadly so one bad target
+#         cannot abort an entire assessment.
+ignore = ["B008", "BLE001"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

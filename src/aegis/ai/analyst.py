@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from aegis.ai.providers import AnthropicProvider, OpenAIProvider
 from aegis.core.config import get_settings
 from aegis.core.logging import get_logger
-from aegis.ai.providers import AnthropicProvider, OpenAIProvider
 from aegis.core.models import Finding, ScanResult, Severity
 
 logger = get_logger(__name__)

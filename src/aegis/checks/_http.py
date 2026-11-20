@@ -30,9 +30,12 @@ async def safe_get(
     current = url
     for _ in range(max_redirects + 1):
         budget = context.get("budget") if context else None
-        if budget is not None and context is not None:
-            if context.get("request_count", 0) >= budget:
-                raise ScanLimitExceededError(f"Request budget of {budget} exhausted")
+        if (
+            budget is not None
+            and context is not None
+            and context.get("request_count", 0) >= budget
+        ):
+            raise ScanLimitExceededError(f"Request budget of {budget} exhausted")
         if not is_safe_url_for_scan(current, domain):
             raise SecurityViolationError(f"URL is outside the authorized scope: {current}")
         _record(context)

@@ -5,7 +5,8 @@ from __future__ import annotations
 import httpx
 
 from aegis.api.main import app, verifier
-from aegis.auth.api_key import api_limiter, settings as auth_settings
+from aegis.auth.api_key import api_limiter
+from aegis.auth.api_key import settings as auth_settings
 from aegis.workers.tasks import run_scan_task
 
 BODY = {

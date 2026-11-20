@@ -14,8 +14,8 @@ import dns.exception
 
 from aegis.core.config import get_settings
 from aegis.core.exceptions import DomainNotVerifiedError
-from aegis.core.security import normalize_domain
 from aegis.core.logging import get_logger
+from aegis.core.security import normalize_domain
 
 logger = get_logger(__name__)
 
