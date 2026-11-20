@@ -55,11 +55,13 @@ cp .env.example .env
 ```bash
 aegis --help
 aegis version
-aegis domain check example.com
-aegis scan example.com --authorize --verified --profile safe
+aegis domain example.com
+aegis scan example.com --authorize --verified --profile safe -o result.json
 aegis report result.json --format markdown -o report.md
-aegis config show
+aegis config
 ```
+
+For the full command, API, configuration, and exit-code reference, see [docs/COMMANDS.md](docs/COMMANDS.md).
 
 **Important:** The `--authorize` flag confirms you are allowed to assess the target. Do not scan systems you do not own or lack permission for.
 

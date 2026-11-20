@@ -24,9 +24,19 @@ from aegis.scanner.engine import ScanEngine
 
 app = typer.Typer(
     name="aegis",
-    help="AEGIS — AI-Powered Cybersecurity Intelligence Platform",
+    help=(
+        "AEGIS — AI-Powered Cybersecurity Intelligence Platform.\n\n"
+        "**Quick start:**\n\n"
+        "    aegis domain example.com\n"
+        "    aegis scan example.com --authorize --verified -o result.json\n"
+        "    aegis report result.json --format markdown -o report.md\n\n"
+        "Only scan domains you own or have explicit written permission to assess. "
+        "Run `aegis <command> --help` for full details."
+    ),
     no_args_is_help=True,
     add_completion=False,
+    rich_markup_mode="markdown",
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 console = Console()
 
@@ -37,7 +47,11 @@ def _run(coro):
 
 @app.command()
 def version() -> None:
-    """Show AEGIS version."""
+    """
+    Show the installed AEGIS version.
+
+    **Example:** `aegis version`
+    """
     console.print(f"AEGIS v{__version__}")
 
 
@@ -45,7 +59,17 @@ def version() -> None:
 def domain_check(
     domain: str = typer.Argument(..., help="Domain to inspect"),
 ) -> None:
-    """Quick domain intelligence check (DNS, SPF, DMARC)."""
+    """
+    Quick domain intelligence check (DNS, SPF, DMARC, DNSSEC).
+
+    Passive only — does not require authorization flags.
+
+    **Usage:** `aegis domain <domain>`
+
+    **Example:** `aegis domain example.com`
+
+    See `docs/COMMANDS.md` for the full reference.
+    """
     setup_logging()
     from aegis.domains.intelligence import DomainIntelligence
 
@@ -96,9 +120,26 @@ def scan(
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write full JSON result"),
 ) -> None:
     """
-    Run a safe security assessment against an authorized domain.
+    Run a safe, non-destructive security assessment of an authorized domain.
 
-    You MUST pass --authorize and, when required by policy, --verified.
+    Checks: DNS/email authentication, TLS certificate, security headers and
+    cookie attributes. No exploitation or DoS testing is performed.
+
+    **You MUST pass `--authorize`.** When
+    `REQUIRE_DOMAIN_VERIFICATION=true` (default) you must also pass `--verified`
+    after completing DNS TXT ownership proof.
+
+    **Usage:** `aegis scan <domain> [--profile safe|standard] [--authorize]
+    [--verified] [--output result.json]`
+
+    **Examples:**
+
+        aegis scan example.com --authorize --verified -o result.json
+        aegis scan example.com --authorize --profile standard
+
+    **Exit codes:** 0 completed · 1 failed · 2 invalid input · 3 missing authorization.
+
+    See `docs/COMMANDS.md` for the full reference.
     """
     setup_logging()
     settings = get_settings()
@@ -179,7 +220,19 @@ def report_generate(
     format: str = typer.Option("markdown", "--format", "-f", help="markdown | json | html"),
     output: Optional[Path] = typer.Option(None, "--output", "-o"),
 ) -> None:
-    """Generate a professional report from a previous scan result JSON."""
+    """
+    Generate a professional report from a saved scan-result JSON file.
+
+    **Usage:** `aegis report <scan_file> [--format markdown|json|html] [-o PATH]`
+
+    **Examples:**
+
+        aegis report result.json --format markdown -o report.md
+        aegis report result.json --format html -o report.html
+        aegis report result.json                 # print to stdout
+
+    See `docs/COMMANDS.md` for the full reference.
+    """
     setup_logging()
     if not scan_file.exists():
         console.print(f"[red]File not found:[/red] {scan_file}")
@@ -204,7 +257,14 @@ def report_generate(
 
 @app.command("config")
 def config_show() -> None:
-    """Show effective configuration (secrets redacted)."""
+    """
+    Show effective configuration with secrets redacted.
+
+    Reads environment variables and the `.env` file. Fields containing
+    `secret`, `key`, `password`, or `token` are masked.
+
+    **Usage:** `aegis config`
+    """
     settings = get_settings()
     data = settings.model_dump()
     for key in list(data.keys()):
