@@ -42,8 +42,17 @@ See SECURITY.md for the full policy.
 ```bash
 git clone https://github.com/Amirhosseinbakhshi2011/AEGIS.git
 cd AEGIS
+./install.sh          # macOS / Linux
+```
+
+On Windows, run `install.bat` (CMD) or `.\install.ps1` (PowerShell).
+
+Each installer creates `.venv`, installs the project with dev dependencies, and
+copies `.env.example` to `.env` if needed. To do it manually instead:
+
+```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # .venv\Scripts\activate.bat on Windows
 pip install -e ".[dev]"
 cp .env.example .env
 ```
