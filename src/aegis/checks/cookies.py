@@ -8,6 +8,7 @@ import httpx
 
 from aegis.checks._http import safe_get
 from aegis.checks.base import BaseCheck
+from aegis.core.exceptions import ScanLimitExceededError
 from aegis.core.models import Confidence, Finding, FindingCategory, Severity
 
 
@@ -26,7 +27,9 @@ class CookieCheck(BaseCheck):
         findings: list[Finding] = []
         try:
             resp = await safe_get(client, url, domain, context=context)
-        except Exception:
+        except Exception as exc:
+            if isinstance(exc, ScanLimitExceededError):
+                raise
             return findings
 
         set_cookie_headers = resp.headers.get_list("set-cookie") if hasattr(resp.headers, "get_list") else []

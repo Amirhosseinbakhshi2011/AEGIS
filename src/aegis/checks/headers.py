@@ -8,7 +8,7 @@ import httpx
 
 from aegis.checks._http import safe_get
 from aegis.checks.base import BaseCheck
-from aegis.core.exceptions import SecurityViolationError
+from aegis.core.exceptions import ScanLimitExceededError, SecurityViolationError
 from aegis.core.models import Confidence, Finding, FindingCategory, Severity
 
 
@@ -71,6 +71,8 @@ class SecurityHeadersCheck(BaseCheck):
                 )
             ]
         except Exception as exc:
+            if isinstance(exc, ScanLimitExceededError):
+                raise
             return [
                 Finding(
                     title="Failed to fetch headers",

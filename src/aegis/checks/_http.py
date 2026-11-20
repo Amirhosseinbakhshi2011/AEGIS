@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from aegis.core.exceptions import SecurityViolationError
+from aegis.core.exceptions import ScanLimitExceededError, SecurityViolationError
 from aegis.core.security import is_safe_url_for_scan, validate_redirect_target
 
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
@@ -29,6 +29,10 @@ async def safe_get(
     """GET a URL while validating every redirect hop against the authorized scope."""
     current = url
     for _ in range(max_redirects + 1):
+        budget = context.get("budget") if context else None
+        if budget is not None and context is not None:
+            if context.get("request_count", 0) >= budget:
+                raise ScanLimitExceededError(f"Request budget of {budget} exhausted")
         if not is_safe_url_for_scan(current, domain):
             raise SecurityViolationError(f"URL is outside the authorized scope: {current}")
         _record(context)

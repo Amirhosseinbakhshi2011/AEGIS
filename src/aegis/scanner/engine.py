@@ -18,6 +18,7 @@ from aegis.core.exceptions import (
     ScanCancelledError,
     SecurityViolationError,
 )
+from aegis.core.limits import RateLimiter
 from aegis.core.logging import get_logger
 from aegis.core.models import (
     Finding,
@@ -43,6 +44,8 @@ class ScanEngine:
         self.verifier = verifier or DomainVerifier()
         self._cancelled: set[str] = set()
         self._active_scans: dict[str, ScanResult] = {}
+        self._semaphore = asyncio.Semaphore(max(1, self.settings.max_concurrent_scans))
+        self._limiter = RateLimiter(self.settings.rate_limit_per_minute)
 
         self.checks = [
             SecurityHeadersCheck(),
@@ -69,11 +72,42 @@ class ScanEngine:
         verified: bool = False,
         metadata: dict[str, Any] | None = None,
     ) -> ScanResult:
-        """
-        Execute a full safe assessment.
+        """Execute a full safe assessment under all configured safety limits."""
+        async with self._semaphore:
+            await self._limiter.acquire()
+            scan_id = str(uuid4())
+            try:
+                async with asyncio.timeout(self.settings.scan_timeout_seconds):
+                    return await self._run_scan_inner(
+                        domain,
+                        profile=profile,
+                        authorized=authorized,
+                        verified=verified,
+                        metadata=metadata,
+                        scan_id=scan_id,
+                    )
+            except TimeoutError:
+                failed = ScanResult(
+                    scan_id=scan_id,
+                    target_domain=normalize_domain(domain),
+                    status=ScanStatus.FAILED,
+                    error_message=f"Scan timed out after {self.settings.scan_timeout_seconds}s",
+                )
+                failed.finished_at = datetime.now(timezone.utc)
+                self._active_scans[scan_id] = failed
+                return failed
 
-        Authorization and domain verification must be confirmed by the caller.
-        """
+    async def _run_scan_inner(
+        self,
+        domain: str,
+        *,
+        profile: ScanProfile = ScanProfile.SAFE,
+        authorized: bool = False,
+        verified: bool = False,
+        metadata: dict[str, Any] | None = None,
+        scan_id: str | None = None,
+    ) -> ScanResult:
+        """Authorization and domain verification must be confirmed by the caller."""
         if self.settings.require_domain_verification and not verified:
             raise DomainNotVerifiedError(domain)
 
@@ -86,7 +120,7 @@ class ScanEngine:
             )
 
         domain = normalize_domain(domain)
-        scan_id = str(uuid4())
+        scan_id = scan_id or str(uuid4())
         result = ScanResult(
             scan_id=scan_id,
             target_domain=domain,
