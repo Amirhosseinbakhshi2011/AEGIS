@@ -14,6 +14,8 @@ from aegis.core.config import get_settings
 from aegis.core.exceptions import AegisError, DomainNotVerifiedError, SecurityViolationError
 from aegis.core.logging import setup_logging
 from aegis.core.models import ScanProfile, ScanResult, ScanStatus
+from aegis.database.repository import get_result, list_results
+from aegis.database.session import get_session, init_db
 from aegis.scanner.engine import ScanEngine
 
 setup_logging()
@@ -23,6 +25,7 @@ engine = ScanEngine()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db()
     yield
 
 
@@ -122,9 +125,21 @@ async def create_scan(body: ScanRequest) -> ScanResult:
 )
 async def get_scan(scan_id: str) -> ScanResult:
     result = engine.get_status(scan_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Scan not found (in-memory only in this version)")
-    return result
+    if result:
+        return result
+    async with get_session() as session:
+        stored = await get_result(session, scan_id)
+    if not stored:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return stored
+
+
+@app.get(f"{settings.aegis_api_prefix}/scans", tags=["scans"])
+async def list_scans(limit: int = 50) -> list[ScanResult]:
+    """List recently stored scan results."""
+    async with get_session() as session:
+        records = await list_results(session, limit=limit)
+    return [ScanResult.model_validate_json(record.result_json) for record in records]
 
 
 @app.post(

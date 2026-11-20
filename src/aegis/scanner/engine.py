@@ -28,6 +28,8 @@ from aegis.core.models import (
 )
 from aegis.core.security import SSRFProtectedTransport, normalize_domain, resolve_and_validate
 from aegis.core.verification import DomainVerifier
+from aegis.database.repository import save_result
+from aegis.database.session import get_session
 from aegis.domains.intelligence import DomainIntelligence
 from aegis.risk.engine import RiskEngine
 
@@ -78,7 +80,7 @@ class ScanEngine:
             scan_id = str(uuid4())
             try:
                 async with asyncio.timeout(self.settings.scan_timeout_seconds):
-                    return await self._run_scan_inner(
+                    result = await self._run_scan_inner(
                         domain,
                         profile=profile,
                         authorized=authorized,
@@ -87,15 +89,25 @@ class ScanEngine:
                         scan_id=scan_id,
                     )
             except TimeoutError:
-                failed = ScanResult(
+                result = ScanResult(
                     scan_id=scan_id,
                     target_domain=normalize_domain(domain),
                     status=ScanStatus.FAILED,
                     error_message=f"Scan timed out after {self.settings.scan_timeout_seconds}s",
                 )
-                failed.finished_at = datetime.now(timezone.utc)
-                self._active_scans[scan_id] = failed
-                return failed
+                result.finished_at = datetime.now(timezone.utc)
+                self._active_scans[scan_id] = result
+
+            await self._persist(result)
+            return result
+
+    async def _persist(self, result: ScanResult) -> None:
+        """Store the result; persistence problems must never fail a scan."""
+        try:
+            async with get_session() as session:
+                await save_result(session, result)
+        except Exception as exc:
+            logger.warning("Could not persist scan %s: %s", result.scan_id, exc)
 
     async def _run_scan_inner(
         self,
