@@ -11,6 +11,7 @@ Complete reference for the AEGIS CLI, REST API, configuration, and exit codes.
 - [Getting started](#getting-started)
 - [CLI conventions](#cli-conventions)
 - [`aegis version`](#aegis-version)
+- [`aegis verify`](#aegis-verify)
 - [`aegis domain`](#aegis-domain)
 - [`aegis scan`](#aegis-scan)
 - [`aegis report`](#aegis-report)
@@ -70,6 +71,7 @@ Top-level commands:
 | Command | Purpose |
 |---------|---------|
 | `version` | Print the AEGIS version. |
+| `verify` | Issue or check a DNS TXT domain ownership proof. |
 | `domain` | Quick DNS / email-authentication intelligence for a domain. |
 | `scan` | Run a safe, non-destructive assessment of an authorized domain. |
 | `report` | Render a saved scan result as Markdown, HTML, or JSON. |
@@ -93,6 +95,31 @@ aegis version
 $ aegis version
 AEGIS v0.1.0
 ```
+
+---
+
+## `aegis verify`
+
+Issue or check a DNS TXT ownership proof. Required before `scan --verified`
+when `REQUIRE_DOMAIN_VERIFICATION=true` (the default).
+
+**Synopsis**
+
+```text
+aegis verify <domain> [--check]
+```
+
+Running without `--check` prints the exact TXT value to publish on the domain.
+With `--check`, AEGIS queries DNS and confirms the value is live.
+
+**Examples**
+
+```bash
+aegis verify example.com
+aegis verify example.com --check
+```
+
+**Exit codes:** `0` verified/issued, `1` not verified, `2` invalid domain.
 
 ---
 
@@ -155,13 +182,15 @@ aegis scan <domain> [--profile safe|standard] [--authorize] [--verified] [--outp
 |--------|---------|-------------|
 | `--profile TEXT` | `safe` | Scan profile: `safe` or `standard` (case-insensitive). |
 | `--authorize` | off | Mandatory confirmation that you own the domain or hold explicit written permission. |
-| `--verified` | off | Mandatory when `REQUIRE_DOMAIN_VERIFICATION=true` (the default). Confirms DNS TXT ownership proof. |
+| `--verified` | off | Mandatory when `REQUIRE_DOMAIN_VERIFICATION=true` (the default). AEGIS checks the live DNS TXT proof issued by `aegis verify`. |
 | `--output`, `-o PATH` | none | Write the complete result as JSON to this path. |
 
 **Examples**
 
 ```bash
-# Full authorized + verified scan, save JSON
+# Publish the proof first (see aegis verify), then run a full scan
+aegis verify example.com
+aegis verify example.com --check
 aegis scan example.com --authorize --verified --profile safe -o result.json
 
 # If domain verification is disabled in .env
@@ -172,7 +201,8 @@ aegis scan example.com --authorize
 
 1. Without `--authorize`, the command exits with code `3`.
 2. With `REQUIRE_DOMAIN_VERIFICATION=true` (default) and no `--verified`, it exits with code `3`.
-3. An unknown profile exits with code `2`.
+3. With `--verified`, the DNS TXT proof must actually resolve; otherwise the scan is refused.
+4. An unknown profile exits with code `2` (validated by Typer before execution).
 
 The command prints a summary panel (status, finding count, posture score, scan ID) and a table of findings. If `--output` is given, the full `ScanResult` JSON is written to that file — this is the input for `aegis report`.
 
@@ -187,7 +217,7 @@ Generate a professional report from a saved scan-result JSON file.
 **Synopsis**
 
 ```text
-aegis report <scan_file> [--format markdown|json|html] [--output PATH]
+aegis report <scan_file> [--format markdown|json|html] [--output PATH] [--ai|--no-ai]
 ```
 
 **Arguments**
@@ -202,6 +232,7 @@ aegis report <scan_file> [--format markdown|json|html] [--output PATH]
 |--------|---------|-------------|
 | `--format`, `-f TEXT` | `markdown` | Output format: `markdown`, `html`, or `json`. |
 | `--output`, `-o PATH` | none | Write to file; if omitted, print to stdout. |
+| `--ai` / `--no-ai` | `--ai` | Include the generated summary and action plan in Markdown/HTML reports. |
 
 **Examples**
 
@@ -285,9 +316,10 @@ Interactive docs: <http://localhost:8000/docs> · ReDoc: <http://localhost:8000/
 |--------|------|-------------|
 | `GET` | `/health` | Liveness; returns `status` and `version`. |
 | `GET` | `/api/v1/health` | Versioned health endpoint. |
-| `POST` | `/api/v1/scans` | Start a scan. Body: `ScanRequest`. Returns a full `ScanResult`. |
-| `GET` | `/api/v1/scans/{scan_id}` | Fetch a scan result (in-memory only in v0.1). |
-| `POST` | `/api/v1/scans/{scan_id}/cancel` | Request cancellation of a running scan. |
+| `POST` | `/api/v1/scans` | Queue a scan. Body: `ScanRequest`. Returns `202` with `scan_id`, `status`, `message`. |
+| `GET` | `/api/v1/scans` | List recently stored scan results. |
+| `GET` | `/api/v1/scans/{scan_id}` | Fetch a scan result (memory first, then database). |
+| `POST` | `/api/v1/scans/{scan_id}/cancel` | Revoke/cancel a running scan. |
 
 `ScanRequest` body:
 
@@ -301,15 +333,19 @@ Interactive docs: <http://localhost:8000/docs> · ReDoc: <http://localhost:8000/
 ```
 
 - `authorized` must be `true` or the API returns `403`.
-- `verified` must be `true` when domain verification is required (`403` otherwise).
+- `verified` must be `true` when domain verification is required; the live DNS TXT proof is checked before queuing (`403` otherwise).
 - Security policy violations and other errors return `400`.
+- Scan endpoints require the `X-API-Key` header when `API_KEY` is configured (`401` otherwise).
+- Scan endpoints are rate limited per client (`429` when exceeded).
 - The API prefix is configurable via `AEGIS_API_PREFIX`.
+- Scans run in a Celery worker when Redis is reachable; otherwise they run in-process. Poll `GET /api/v1/scans/{scan_id}` for completion.
 
 Example:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/scans \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your-key-if-configured" \
   -d '{"domain":"example.com","profile":"safe","authorized":true,"verified":true}'
 ```
 
@@ -325,6 +361,7 @@ Settings are read from environment variables or a `.env` file in the working dir
 | `AEGIS_DEBUG` | `false` | Debug mode. |
 | `AEGIS_SECRET_KEY` | dev placeholder | App secret (min 32 chars). Change in production. |
 | `AEGIS_API_PREFIX` | `/api/v1` | Prefix for versioned API routes. |
+| `API_KEY` | empty | Optional shared key for scan endpoints (`X-API-Key` header). |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./aegis.db` | SQLAlchemy database URL. |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL (used by Celery). |
 | `JWT_ALGORITHM` | `HS256` | JWT signing algorithm. |
@@ -337,7 +374,8 @@ Settings are read from environment variables or a `.env` file in the working dir
 | `RATE_LIMIT_PER_MINUTE` | `30` | Rate-limit setting. |
 | `REQUIRE_DOMAIN_VERIFICATION` | `true` | Require `--verified` / `verified=true`. |
 | `VERIFICATION_TXT_PREFIX` | `aegis-verification=` | Required DNS TXT prefix for ownership proof. |
-| `AI_PROVIDER` | empty | Optional external AI provider name. |
+| `DKIM_SELECTORS` | `["selector1","selector2","google","default"]` | Selectors checked for DKIM keys. |
+| `AI_PROVIDER` | empty | Optional external provider: `openai` or `anthropic`. |
 | `OPENAI_API_KEY` | empty | OpenAI key (optional). |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model name. |
 | `ANTHROPIC_API_KEY` | empty | Anthropic key (optional). |
@@ -362,6 +400,8 @@ Notes:
 | `2` | Invalid input (bad domain, unknown profile, missing file). |
 | `3` | Authorization or domain verification missing. |
 
+API-only status codes: `401` missing/invalid API key, `403` authorization or verification failure, `429` rate limit exceeded, `202` scan accepted.
+
 ---
 
 ## Troubleshooting
@@ -373,13 +413,19 @@ Activate the virtual environment first (`.venv\Scripts\activate.bat`), or reinst
 Not supported in v0.1. Use the `aegis` command.
 
 **`require_domain_verification` blocks my scan**
-Either complete the DNS TXT proof and pass `--verified`, or set `REQUIRE_DOMAIN_VERIFICATION=false` in `.env` for local testing.
+Run `aegis verify <domain>` to get the TXT value, publish it, confirm with `aegis verify <domain> --check`, then pass `--verified`. For local testing only, set `REQUIRE_DOMAIN_VERIFICATION=false` in `.env`.
 
 **`No A or AAAA records` / empty DNS output**
 Confirm the domain resolves and that outbound DNS works from your machine. Some networks block DNS or only allow public resolvers.
 
 **API returns `403`**
-Set `authorized: true` in the JSON body, and `verified: true` if verification is required.
+Set `authorized: true` in the JSON body, publish the TXT proof, and set `verified: true`.
+
+**API returns `401` or `429`**
+Set the `X-API-Key` header when `API_KEY` is configured, and respect `RATE_LIMIT_PER_MINUTE`.
+
+**Scans never finish via the API**
+Check Redis/Celery. If the broker is unavailable the API logs a warning and runs the scan in-process; poll `GET /api/v1/scans/{scan_id}` for the result.
 
 **Unicode/garbled characters in Windows console**
 Set `chcp 65001` or use Windows Terminal with UTF-8. This is a terminal display issue, not a scan failure.

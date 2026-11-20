@@ -55,6 +55,8 @@ cp .env.example .env
 ```bash
 aegis --help
 aegis version
+aegis verify example.com
+aegis verify example.com --check
 aegis domain example.com
 aegis scan example.com --authorize --verified --profile safe -o result.json
 aegis report result.json --format markdown -o report.md
@@ -72,6 +74,8 @@ uvicorn aegis.api.main:app --reload --port 8000
 ```
 
 Open http://localhost:8000/docs
+
+Scans are queued in Celery (set `REDIS_URL`) and return `202` with a `scan_id`; poll `GET /api/v1/scans/{scan_id}` for the result. If Redis is unavailable, the API falls back to in-process execution. Set `API_KEY` to require the `X-API-Key` header.
 
 ### Docker
 
