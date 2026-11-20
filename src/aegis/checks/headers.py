@@ -104,6 +104,10 @@ class SecurityHeadersCheck(BaseCheck):
                     )
                 )
 
+        csp = headers.get("content-security-policy", "").lower()
+        if "frame-ancestors" in csp:
+            findings = [f for f in findings if f.check_id != "headers.missing.x-frame-options"]
+
         if "server" in headers:
             findings.append(
                 Finding(

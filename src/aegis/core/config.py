@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Domain verification
     require_domain_verification: bool = True
     verification_txt_prefix: str = "aegis-verification="
+    dkim_selectors: list[str] = Field(
+        default_factory=lambda: ["selector1", "selector2", "google", "default"]
+    )
 
     # AI (optional)
     ai_provider: str = ""

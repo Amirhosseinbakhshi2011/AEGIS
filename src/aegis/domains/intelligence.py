@@ -9,6 +9,7 @@ import dns.asyncresolver
 import dns.exception
 import dns.rdatatype
 
+from aegis.core.config import get_settings
 from aegis.core.logging import get_logger
 from aegis.core.models import DomainInfo, Finding, FindingCategory, Confidence, Severity
 from aegis.core.security import normalize_domain
@@ -36,6 +37,7 @@ class DomainIntelligence:
         info.caa_records = await self._query(domain, "CAA")
         info.soa = await self._query_soa(domain)
         info.dnssec_enabled = await self._check_dnssec(domain)
+        info.dkim_selectors = await self._check_dkim(domain)
         info.spf = self._parse_spf(info.txt_records)
         info.dmarc = await self._parse_dmarc(domain)
 
@@ -83,6 +85,25 @@ class DomainIntelligence:
                 )
             )
 
+        spf_records = [record for record in info.txt_records if record.lower().startswith("v=spf1")]
+        if len(spf_records) > 1:
+            findings.append(
+                Finding(
+                    title="Multiple SPF records found",
+                    description=(
+                        "The domain publishes more than one SPF TXT record. SPF permits "
+                        "only one record per domain, so evaluation is undefined."
+                    ),
+                    severity=Severity.HIGH,
+                    confidence=Confidence.HIGH,
+                    category=FindingCategory.EMAIL_AUTH,
+                    evidence={"spf_records": spf_records},
+                    remediation="Merge all SPF mechanisms into a single TXT record.",
+                    references=["https://datatracker.ietf.org/doc/html/rfc7208"],
+                    check_id="dns.spf.multiple",
+                )
+            )
+
         if info.dmarc is None:
             findings.append(
                 Finding(
@@ -105,6 +126,20 @@ class DomainIntelligence:
                 )
             )
         else:
+            if "p" not in info.dmarc:
+                findings.append(
+                    Finding(
+                        title="DMARC record has no policy tag",
+                        description="The DMARC TXT record is missing the required 'p=' policy tag.",
+                        severity=Severity.MEDIUM,
+                        confidence=Confidence.HIGH,
+                        category=FindingCategory.EMAIL_AUTH,
+                        evidence={"dmarc": info.dmarc},
+                        remediation="Add a policy such as 'p=none', 'p=quarantine' or 'p=reject'.",
+                        references=["https://datatracker.ietf.org/doc/html/rfc7489"],
+                        check_id="dns.dmarc.no_policy",
+                    )
+                )
             policy = info.dmarc.get("p", "none")
             if policy == "none":
                 findings.append(
@@ -122,6 +157,24 @@ class DomainIntelligence:
                         check_id="dns.dmarc.none",
                     )
                 )
+
+        if not info.dkim_selectors:
+            findings.append(
+                Finding(
+                    title="No DKIM record found for common selectors",
+                    description=(
+                        "None of the configured common DKIM selectors publish a key. "
+                        "A custom selector may still be in use; verify manually."
+                    ),
+                    severity=Severity.MEDIUM,
+                    confidence=Confidence.LOW,
+                    category=FindingCategory.EMAIL_AUTH,
+                    evidence={"selectors_checked": get_settings().dkim_selectors},
+                    remediation="Publish a DKIM key or confirm the selector your mail provider uses.",
+                    references=["https://datatracker.ietf.org/doc/html/rfc6376"],
+                    check_id="dns.dkim.missing",
+                )
+            )
 
         if not info.caa_records:
             findings.append(
@@ -198,6 +251,15 @@ class DomainIntelligence:
             return False
         except Exception:
             return None
+
+    async def _check_dkim(self, domain: str) -> list[str]:
+        """Check a small set of well-known DKIM selectors."""
+        found: list[str] = []
+        for selector in get_settings().dkim_selectors:
+            records = await self._query(f"{selector}._domainkey.{domain}", "TXT")
+            if any(record.replace(" ", "").lower().startswith("v=dkim1") for record in records):
+                found.append(selector)
+        return found
 
     def _parse_spf(self, txt_records: list[str]) -> dict[str, Any] | None:
         for rec in txt_records:

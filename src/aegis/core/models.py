@@ -84,6 +84,7 @@ class DomainInfo(BaseModel):
     caa_records: list[str] = Field(default_factory=list)
     soa: dict[str, Any] | None = None
     dnssec_enabled: bool | None = None
+    dkim_selectors: list[str] = Field(default_factory=list)
     spf: dict[str, Any] | None = None
     dmarc: dict[str, Any] | None = None
     collected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
