@@ -73,11 +73,12 @@ class ScanEngine:
         authorized: bool = False,
         verified: bool = False,
         metadata: dict[str, Any] | None = None,
+        scan_id: str | None = None,
     ) -> ScanResult:
         """Execute a full safe assessment under all configured safety limits."""
         async with self._semaphore:
             await self._limiter.acquire()
-            scan_id = str(uuid4())
+            scan_id = scan_id or str(uuid4())
             try:
                 async with asyncio.timeout(self.settings.scan_timeout_seconds):
                     result = await self._run_scan_inner(
