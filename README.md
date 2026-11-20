@@ -4,8 +4,6 @@
 
 AEGIS is an open-source, AI-assisted cybersecurity intelligence platform that performs authorized, non-destructive security assessments of websites and domains. It collects domain intelligence, inspects TLS and HTTP security configuration, scores risk transparently, and produces professional reports.
 
-Built and maintained by [Amirhossein Bakhshi](https://github.com/Amirhosseinbakhshi2011).
-
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
@@ -106,10 +104,3 @@ Not yet complete: full multi-user auth (shared API key only), broad CVE correlat
 ## License
 
 MIT — see LICENSE.
-
-## Maintainer
-
-**Amirhossein Bakhshi**  
-https://github.com/Amirhosseinbakhshi2011
-
-Built and maintained by Amirhossein Bakhshi.
