@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 from uuid import uuid4
@@ -84,9 +84,10 @@ class DomainInfo(BaseModel):
     caa_records: list[str] = Field(default_factory=list)
     soa: dict[str, Any] | None = None
     dnssec_enabled: bool | None = None
+    dkim_selectors: list[str] = Field(default_factory=list)
     spf: dict[str, Any] | None = None
     dmarc: dict[str, Any] | None = None
-    collected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    collected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ScanResult(BaseModel):

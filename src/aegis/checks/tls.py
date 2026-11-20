@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import ssl
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
+from aegis.checks._http import _record, safe_get
 from aegis.checks.base import BaseCheck
+from aegis.core.exceptions import ScanLimitExceededError, SecurityViolationError
+from aegis.core.logging import get_logger
 from aegis.core.models import Confidence, Finding, FindingCategory, Severity
+from aegis.core.security import resolve_and_validate, validate_redirect_target
+
+logger = get_logger(__name__)
 
 
 class TLSCheck(BaseCheck):
@@ -28,7 +34,7 @@ class TLSCheck(BaseCheck):
         https_url = url if url.startswith("https://") else f"https://{domain}/"
 
         try:
-            resp = await client.get(https_url, follow_redirects=True)
+            resp = await safe_get(client, https_url, domain, context=context)
             if resp.status_code >= 500:
                 findings.append(
                     Finding(
@@ -57,7 +63,24 @@ class TLSCheck(BaseCheck):
                 )
             )
             return findings
+        except SecurityViolationError as exc:
+            findings.append(
+                Finding(
+                    title="Redirect escaped authorized scope",
+                    description=str(exc),
+                    severity=Severity.HIGH,
+                    confidence=Confidence.HIGH,
+                    category=FindingCategory.TLS,
+                    evidence={"error": str(exc)},
+                    remediation="Keep all redirects within the authorized domain.",
+                    check_id="tls.redirect_scope_violation",
+                    affected_url=https_url,
+                )
+            )
+            return findings
         except Exception as exc:
+            if isinstance(exc, ScanLimitExceededError):
+                raise
             findings.append(
                 Finding(
                     title="TLS connection problem",
@@ -76,13 +99,18 @@ class TLSCheck(BaseCheck):
             cert_info = await self._get_cert_info(domain)
             if cert_info:
                 findings.extend(self._analyze_cert(cert_info, https_url))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Certificate inspection failed for %s: %s", domain, exc)
 
         http_url = f"http://{domain}/"
         try:
+            _record(context)
             http_resp = await client.get(http_url, follow_redirects=False)
             location = http_resp.headers.get("location", "")
+            if location:
+                from urllib.parse import urljoin
+
+                validate_redirect_target(domain, urljoin(http_url, location))
             if http_resp.status_code in (301, 302, 307, 308) and location.startswith("https://"):
                 pass
             elif http_resp.status_code < 400:
@@ -105,23 +133,29 @@ class TLSCheck(BaseCheck):
                         affected_url=http_url,
                     )
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("HTTP redirect inspection failed for %s: %s", domain, exc)
 
         return findings
 
     async def _get_cert_info(self, domain: str) -> dict[str, Any] | None:
         import asyncio
+        import socket
+
+        try:
+            ips = await asyncio.to_thread(resolve_and_validate, domain)
+        except Exception:
+            return None
+        ip = ips[0]
 
         def _fetch() -> dict[str, Any] | None:
             try:
                 ctx = ssl.create_default_context()
                 with ctx.wrap_socket(
-                    __import__("socket").create_connection((domain, 443), timeout=8),
+                    socket.create_connection((ip, 443), timeout=8),
                     server_hostname=domain,
                 ) as sock:
-                    cert = sock.getpeercert()
-                    return cert  # type: ignore[return-value]
+                    return sock.getpeercert()  # type: ignore[return-value]
             except Exception:
                 return None
 
@@ -133,9 +167,9 @@ class TLSCheck(BaseCheck):
         if not_after:
             try:
                 exp = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(
-                    tzinfo=timezone.utc
+                    tzinfo=UTC
                 )
-                days_left = (exp - datetime.now(timezone.utc)).days
+                days_left = (exp - datetime.now(UTC)).days
                 if days_left < 0:
                     findings.append(
                         Finding(

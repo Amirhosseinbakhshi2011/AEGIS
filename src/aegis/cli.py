@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
+from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -19,16 +18,38 @@ from aegis.core.exceptions import AegisError
 from aegis.core.logging import setup_logging
 from aegis.core.models import ScanProfile
 from aegis.core.security import normalize_domain
+from aegis.core.verification import DomainVerifier
 from aegis.reports.generator import ReportGenerator
 from aegis.scanner.engine import ScanEngine
 
 app = typer.Typer(
     name="aegis",
-    help="AEGIS — AI-Powered Cybersecurity Intelligence Platform",
+    help=(
+        "AEGIS — AI-Powered Cybersecurity Intelligence Platform.\n\n"
+        "**Quick start:**\n\n"
+        "    aegis domain example.com\n"
+        "    aegis scan example.com --authorize --verified -o result.json\n"
+        "    aegis report result.json --format markdown -o report.md\n\n"
+        "Only scan domains you own or have explicit written permission to assess. "
+        "Run `aegis <command> --help` for full details."
+    ),
     no_args_is_help=True,
     add_completion=False,
+    rich_markup_mode="markdown",
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 console = Console()
+
+
+class ProfileChoice(str, Enum):
+    safe = "safe"
+    standard = "standard"
+
+
+class FormatChoice(str, Enum):
+    markdown = "markdown"
+    json = "json"
+    html = "html"
 
 
 def _run(coro):
@@ -37,15 +58,68 @@ def _run(coro):
 
 @app.command()
 def version() -> None:
-    """Show AEGIS version."""
+    """
+    Show the installed AEGIS version.
+
+    **Example:** `aegis version`
+    """
     console.print(f"AEGIS v{__version__}")
+
+
+@app.command("verify")
+def domain_verify(
+    domain: str = typer.Argument(..., help="Domain whose ownership you want to prove"),
+    check: bool = typer.Option(
+        False, "--check", help="Query DNS and report whether the TXT proof is live"
+    ),
+) -> None:
+    """
+    Issue or check a DNS TXT domain ownership proof.
+
+    **Usage:** `aegis verify <domain>` prints the TXT value to publish.
+    `aegis verify <domain> --check` verifies it is live.
+
+    **Example:** `aegis verify example.com --check`
+    """
+    setup_logging()
+    verifier = DomainVerifier()
+
+    async def _go() -> None:
+        try:
+            normalized = normalize_domain(domain)
+        except ValueError as exc:
+            console.print(f"[red]Invalid domain:[/red] {exc}")
+            raise typer.Exit(2) from exc
+        if check:
+            if await verifier.verify(normalized):
+                console.print(f"[green]Verified[/green] ownership of {normalized}")
+            else:
+                console.print(f"[red]Not verified[/red] for {normalized}. Publish this TXT value:")
+                console.print(verifier.record_value(normalized))
+                raise typer.Exit(1)
+        else:
+            console.print(f"Publish this TXT value on [cyan]{normalized}[/cyan]:")
+            console.print(Panel(verifier.record_value(normalized), title="AEGIS verification TXT"))
+            console.print(f"Then run: aegis verify {normalized} --check")
+
+    _run(_go())
 
 
 @app.command("domain")
 def domain_check(
     domain: str = typer.Argument(..., help="Domain to inspect"),
 ) -> None:
-    """Quick domain intelligence check (DNS, SPF, DMARC)."""
+    """
+    Quick domain intelligence check (DNS, SPF, DMARC, DNSSEC).
+
+    Passive only — does not require authorization flags.
+
+    **Usage:** `aegis domain <domain>`
+
+    **Example:** `aegis domain example.com`
+
+    See `docs/COMMANDS.md` for the full reference.
+    """
     setup_logging()
     from aegis.domains.intelligence import DomainIntelligence
 
@@ -82,7 +156,9 @@ def domain_check(
 @app.command()
 def scan(
     domain: str = typer.Argument(..., help="Authorized domain to assess"),
-    profile: str = typer.Option("safe", help="Scan profile: safe | standard"),
+    profile: ProfileChoice = typer.Option(
+        ProfileChoice.safe, help="Scan profile: safe | standard"
+    ),
     authorize: bool = typer.Option(
         False,
         "--authorize",
@@ -93,12 +169,29 @@ def scan(
         "--verified",
         help="Confirm domain ownership has been verified (DNS TXT or equivalent)",
     ),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write full JSON result"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write full JSON result"),
 ) -> None:
     """
-    Run a safe security assessment against an authorized domain.
+    Run a safe, non-destructive security assessment of an authorized domain.
 
-    You MUST pass --authorize and, when required by policy, --verified.
+    Checks: DNS/email authentication, TLS certificate, security headers and
+    cookie attributes. No exploitation or DoS testing is performed.
+
+    **You MUST pass `--authorize`.** When
+    `REQUIRE_DOMAIN_VERIFICATION=true` (default) you must also pass `--verified`
+    after completing DNS TXT ownership proof.
+
+    **Usage:** `aegis scan <domain> [--profile safe|standard] [--authorize]
+    [--verified] [--output result.json]`
+
+    **Examples:**
+
+        aegis scan example.com --authorize --verified -o result.json
+        aegis scan example.com --authorize --profile standard
+
+    **Exit codes:** 0 completed · 1 failed · 2 invalid input · 3 missing authorization.
+
+    See `docs/COMMANDS.md` for the full reference.
     """
     setup_logging()
     settings = get_settings()
@@ -118,11 +211,7 @@ def scan(
         )
         raise typer.Exit(3)
 
-    try:
-        prof = ScanProfile(profile.lower())
-    except ValueError:
-        console.print(f"[red]Unknown profile:[/red] {profile}")
-        raise typer.Exit(2)
+    prof = ScanProfile(profile.value)
 
     engine = ScanEngine()
 
@@ -176,10 +265,29 @@ def scan(
 @app.command("report")
 def report_generate(
     scan_file: Path = typer.Argument(..., help="Path to scan result JSON"),
-    format: str = typer.Option("markdown", "--format", "-f", help="markdown | json | html"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    format: FormatChoice = typer.Option(
+        FormatChoice.markdown, "--format", "-f", help="markdown | json | html"
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o"),
+    include_ai: bool = typer.Option(
+        True,
+        "--ai/--no-ai",
+        help="Include the generated summary and action plan (markdown/html only)",
+    ),
 ) -> None:
-    """Generate a professional report from a previous scan result JSON."""
+    """
+    Generate a professional report from a saved scan-result JSON file.
+
+    **Usage:** `aegis report <scan_file> [--format markdown|json|html] [-o PATH]`
+
+    **Examples:**
+
+        aegis report result.json --format markdown -o report.md
+        aegis report result.json --format html -o report.html
+        aegis report result.json                 # print to stdout
+
+    See `docs/COMMANDS.md` for the full reference.
+    """
     setup_logging()
     if not scan_file.exists():
         console.print(f"[red]File not found:[/red] {scan_file}")
@@ -192,7 +300,7 @@ def report_generate(
     gen = ReportGenerator()
 
     async def _go():
-        return await gen.generate(result, fmt=format)
+        return await gen.generate(result, fmt=format.value, include_ai=include_ai)
 
     content = _run(_go())
     if output:
@@ -204,13 +312,19 @@ def report_generate(
 
 @app.command("config")
 def config_show() -> None:
-    """Show effective configuration (secrets redacted)."""
+    """
+    Show effective configuration with secrets redacted.
+
+    Reads environment variables and the `.env` file. Fields containing
+    `secret`, `key`, `password`, or `token` are masked.
+
+    **Usage:** `aegis config`
+    """
     settings = get_settings()
     data = settings.model_dump()
     for key in list(data.keys()):
-        if any(s in key.lower() for s in ("secret", "key", "password", "token")):
-            if data[key]:
-                data[key] = "***REDACTED***"
+        if any(s in key.lower() for s in ("secret", "key", "password", "token")) and data[key]:
+            data[key] = "***REDACTED***"
     console.print_json(data=data)
 
 

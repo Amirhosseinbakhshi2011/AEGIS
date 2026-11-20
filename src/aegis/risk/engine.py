@@ -46,11 +46,16 @@ class RiskEngine:
 
         deductions: list[dict[str, Any]] = []
         total_deduction = 0.0
+        seen: dict[str, int] = {}
+        max_per_check = 3
 
         for f in findings:
+            count = seen.get(f.check_id, 0) + 1
+            seen[f.check_id] = count
+            capped = count > max_per_check
             weight = SEVERITY_WEIGHT.get(f.severity, 5.0)
             mult = CONFIDENCE_MULTIPLIER.get(f.confidence, 0.5)
-            amount = weight * mult
+            amount = 0.0 if capped else weight * mult
             total_deduction += amount
             deductions.append(
                 {
@@ -59,6 +64,7 @@ class RiskEngine:
                     "severity": f.severity.value,
                     "confidence": f.confidence.value,
                     "deduction": round(amount, 2),
+                    "capped": capped,
                 }
             )
 
@@ -70,6 +76,7 @@ class RiskEngine:
             "total_deduction": round(total_deduction, 2),
             "final_score": score,
             "finding_count": len(findings),
+            "max_findings_per_check": max_per_check,
             "by_severity": self._count_by_severity(findings),
             "deductions": deductions[:50],
             "methodology": (
@@ -77,6 +84,7 @@ class RiskEngine:
                 "(severity_weight × confidence_multiplier). "
                 "Critical=35, High=20, Medium=10, Low=4, Info=1. "
                 "Confidence: high=1.0, medium=0.7, low=0.4. "
+                "At most 3 findings per check_id are deducted to avoid score saturation. "
                 "This is an AEGIS-specific posture indicator, not an industry standard score."
             ),
         }

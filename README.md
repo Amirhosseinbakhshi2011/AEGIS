@@ -4,8 +4,6 @@
 
 AEGIS is an open-source, AI-assisted cybersecurity intelligence platform that performs authorized, non-destructive security assessments of websites and domains. It collects domain intelligence, inspects TLS and HTTP security configuration, scores risk transparently, and produces professional reports.
 
-Built and maintained by [Amirhossein Bakhshi](https://github.com/Amirhosseinbakhshi2011).
-
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
@@ -44,8 +42,17 @@ See SECURITY.md for the full policy.
 ```bash
 git clone https://github.com/Amirhosseinbakhshi2011/AEGIS.git
 cd AEGIS
+./install.sh          # macOS / Linux
+```
+
+On Windows, run `install.bat` (CMD) or `.\install.ps1` (PowerShell).
+
+Each installer creates `.venv`, installs the project with dev dependencies, and
+copies `.env.example` to `.env` if needed. To do it manually instead:
+
+```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # .venv\Scripts\activate.bat on Windows
 pip install -e ".[dev]"
 cp .env.example .env
 ```
@@ -55,11 +62,15 @@ cp .env.example .env
 ```bash
 aegis --help
 aegis version
-aegis domain check example.com
-aegis scan example.com --authorize --verified --profile safe
+aegis verify example.com
+aegis verify example.com --check
+aegis domain example.com
+aegis scan example.com --authorize --verified --profile safe -o result.json
 aegis report result.json --format markdown -o report.md
-aegis config show
+aegis config
 ```
+
+For the full command, API, configuration, and exit-code reference, see [docs/COMMANDS.md](docs/COMMANDS.md).
 
 **Important:** The `--authorize` flag confirms you are allowed to assess the target. Do not scan systems you do not own or lack permission for.
 
@@ -70,6 +81,8 @@ uvicorn aegis.api.main:app --reload --port 8000
 ```
 
 Open http://localhost:8000/docs
+
+Scans are queued in Celery (set `REDIS_URL`) and return `202` with a `scan_id`; poll `GET /api/v1/scans/{scan_id}` for the result. If Redis is unavailable, the API falls back to in-process execution. Set `API_KEY` to require the `X-API-Key` header.
 
 ### Docker
 
@@ -95,15 +108,8 @@ ruff check src tests
 
 AEGIS v0.1 focuses on solid authorization/SSRF foundations, domain intelligence, core web checks, transparent risk scoring, reports, CLI and REST API.
 
-Not yet complete: full multi-user auth, Celery workers, broad CVE correlation, PDF export, production dashboard UI.
+Not yet complete: full multi-user auth (shared API key only), broad CVE correlation, PDF export, production dashboard UI.
 
 ## License
 
 MIT — see LICENSE.
-
-## Maintainer
-
-**Amirhossein Bakhshi**  
-https://github.com/Amirhosseinbakhshi2011
-
-Built and maintained by Amirhossein Bakhshi.

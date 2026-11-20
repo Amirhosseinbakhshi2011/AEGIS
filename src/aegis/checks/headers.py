@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
+from aegis.checks._http import safe_get
 from aegis.checks.base import BaseCheck
+from aegis.core.exceptions import ScanLimitExceededError, SecurityViolationError
 from aegis.core.models import Confidence, Finding, FindingCategory, Severity
 
 
@@ -15,7 +17,7 @@ class SecurityHeadersCheck(BaseCheck):
     name = "Security Headers"
     description = "Inspect common HTTP security response headers."
 
-    EXPECTED = {
+    EXPECTED: ClassVar[dict[str, dict[str, object]]] = {
         "strict-transport-security": {
             "severity": Severity.MEDIUM,
             "remediation": (
@@ -54,8 +56,23 @@ class SecurityHeadersCheck(BaseCheck):
     ) -> list[Finding]:
         findings: list[Finding] = []
         try:
-            resp = await client.get(url, follow_redirects=False)
+            resp = await safe_get(client, url, domain, context=context)
+        except SecurityViolationError as exc:
+            return [
+                Finding(
+                    title="Redirect escaped authorized scope",
+                    description=str(exc),
+                    severity=Severity.HIGH,
+                    confidence=Confidence.HIGH,
+                    category=FindingCategory.MISCONFIGURATION,
+                    evidence={"error": str(exc)},
+                    check_id="headers.redirect_scope_violation",
+                    affected_url=url,
+                )
+            ]
         except Exception as exc:
+            if isinstance(exc, ScanLimitExceededError):
+                raise
             return [
                 Finding(
                     title="Failed to fetch headers",
@@ -86,6 +103,10 @@ class SecurityHeadersCheck(BaseCheck):
                         affected_url=url,
                     )
                 )
+
+        csp = headers.get("content-security-policy", "").lower()
+        if "frame-ancestors" in csp:
+            findings = [f for f in findings if f.check_id != "headers.missing.x-frame-options"]
 
         if "server" in headers:
             findings.append(

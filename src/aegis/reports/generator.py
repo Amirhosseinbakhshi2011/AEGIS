@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 from aegis.ai.analyst import AISecurityAnalyst
 from aegis.core.models import ScanResult
@@ -43,7 +42,7 @@ class ReportGenerator:
             lines.append(f"**Started:** {result.started_at.isoformat()}  ")
         if result.finished_at:
             lines.append(f"**Finished:** {result.finished_at.isoformat()}  ")
-        lines.append(f"**Generated:** {datetime.now(timezone.utc).isoformat()}  ")
+        lines.append(f"**Generated:** {datetime.now(UTC).isoformat()}  ")
         lines.append("")
 
         lines.append("## Authorization & Scope")
